@@ -1,0 +1,24 @@
+{
+    "name": "ivanchenkoandriy/beegeetest",
+    "description": "BeeGee test",
+    "type": "project",
+    "authors": [
+        {
+            "name": "Andriy Ivanchenko",
+            "email": "ivanchenko.andriy@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "autoload": {
+        "psr-4": {"app\\": "app/"},
+        "files": ["app/helpers/Html.php", "app/helpers/Http.php"]
+    },
+    "require": {
+        "illuminate/database": "^5.5",
+        "bramus/router": "~1.3",
+        "gargron/fileupload": "~1.4.0",
+        "league/url": "^3.3",
+        "hoa/session": "~0.0",
+        "claviska/simpleimage": "^3.3"
+    }
+}

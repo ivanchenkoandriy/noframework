@@ -1,0 +1,53 @@
+/* bootstrap */
+.mt-10 {
+    margin-top: 10px;
+}
+
+/* table */
+table.table-sortable thead > tr > th.sorting_asc, table.table-sortable thead > tr > th.sorting_desc, table.table-sortable thead > tr > th.sorting,
+table.table-sortable thead > tr > td.sorting_asc,
+table.table-sortable thead > tr > td.sorting_desc,
+table.table-sortable thead > tr > td.sorting {
+    padding-right: 30px;
+}
+table.table-sortable thead > tr > th:active,
+table.table-sortable thead > tr > td:active {
+    outline: none;
+}
+table.table-sortable thead .sorting,
+table.table-sortable thead .sorting_asc,
+table.table-sortable thead .sorting_desc,
+table.table-sortable thead .sorting_asc_disabled,
+table.table-sortable thead .sorting_desc_disabled {
+    cursor: pointer;
+    position: relative;
+}
+table.table-sortable thead .sorting:after,
+table.table-sortable thead .sorting_asc:after,
+table.table-sortable thead .sorting_desc:after,
+table.table-sortable thead .sorting_asc_disabled:after,
+table.table-sortable thead .sorting_desc_disabled:after {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    display: block;
+    font-family: 'Glyphicons Halflings';
+    opacity: 0.5;
+}
+table.table-sortable thead .sorting:after {
+    opacity: 0.2;
+    content: "\e150";
+    /* sort */
+}
+table.table-sortable thead .sorting_asc:after {
+    content: "\e155";
+    /* sort-by-attributes */
+}
+table.table-sortable thead .sorting_desc:after {
+    content: "\e156";
+    /* sort-by-attributes-alt */
+}
+table.table-sortable thead .sorting_asc_disabled:after,
+table.table-sortable thead .sorting_desc_disabled:after {
+    color: #eee;
+}
