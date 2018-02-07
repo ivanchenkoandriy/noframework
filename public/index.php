@@ -1,84 +1,54 @@
 <?php
 
-use app\Application;
-use app\controllers\AuthController;
-use app\controllers\MainController;
-use app\Router;
-use Illuminate\Database\Capsule\Manager as Database;
+use DI\Container;
+use FastRoute\Dispatcher;
+use FastRoute\RouteCollector;
+use function app\helpers\Http\notAllowed;
+use function app\helpers\Http\notFound;
+use function FastRoute\simpleDispatcher;
 
-require __DIR__ . '/../vendor/autoload.php';
+/* @var $container Container */
+$container = require __DIR__ . '/../app/bootstrap.php';
 
-/**
- * Root directory
- */
-define('ROOT_PATH', realpath(__DIR__ . DIRECTORY_SEPARATOR . '..') . DIRECTORY_SEPARATOR);
+$dispatcher = simpleDispatcher(function (RouteCollector $r) {
+    $r->addRoute('GET', '/', ['app\controllers\MainController', 'index']);
+    $r->addRoute('GET', '/add', ['app\controllers\MainController', 'add']);
+    $r->addRoute('POST', '/add-handler', ['app\controllers\MainController', 'addHandler']);
+    $r->addRoute('POST', '/preview', ['app\controllers\MainController', 'preview']);
+    $r->addRoute('GET', '/view/{id:\d+}', ['app\controllers\MainController', 'view']);
+    $r->addRoute('GET', '/edit/{id:\d+}', ['app\controllers\MainController', 'edit']);
+    $r->addRoute('POST', '/edit-handler/{id:\d+}', ['app\controllers\MainController', 'editHandler']);
+    $r->addRoute('GET', '/remove/{id:\d+}', ['app\controllers\MainController', 'remove']);
+    $r->addRoute('POST', '/remove-handler/{id:\d+}', ['app\controllers\MainController', 'removeHandler']);
+    $r->addRoute('POST', '/auth/login', ['app\controllers\AuthController', 'login']);
+    $r->addRoute('GET', '/auth/logout', ['app\controllers\AuthController', 'logout']);
+});
 
-/**
- * Application directory
- */
-define('APP_PATH', ROOT_PATH . 'app' . DIRECTORY_SEPARATOR);
+$requestMethod = filter_input(INPUT_SERVER, 'REQUEST_METHOD');
+$requestUri = filter_input(INPUT_SERVER, 'REQUEST_URI');
 
-/**
- * Views path
- */
-define('VIEWS_PATH', APP_PATH . 'views' . DIRECTORY_SEPARATOR);
+// Strip query string (?foo=bar)
+if (false !== $pos = strpos($requestUri, '?')) {
+    $requestUri = substr($requestUri, 0, $pos);
+}
 
-/**
- * Autorization data
- */
-define('ADMIN_LOGIN', 'admin');
-define('ADMIN_PASSWORD', '123');
+// and decode URI
+$requestUri = rawurldecode($requestUri);
 
-/**
- * Limit picture size
- */
-define('PICTURE_WIDTH', 320);
-define('PICTURE_HEIGHT', 240);
+$routeInfo = $dispatcher->dispatch($requestMethod, $requestUri);
+switch ($routeInfo[0]) {
+    case Dispatcher::NOT_FOUND:
+        notFound();
+        echo '404 Not Found';
+        break;
+    case Dispatcher::METHOD_NOT_ALLOWED:
+        notAllowed();
+        echo '405 Method Not Allowed';
+        break;
+    case Dispatcher::FOUND:
+        $controller = $routeInfo[1];
+        $parameters = $routeInfo[2];
 
-/**
- * Constants
- */
-define('NO_FILE_WAS_UPLOADED', 4);
-define('APP_CHARSET', 'utf-8');
-
-/**
- * Regular expressions of paths
- */
-$routes = [
-    '/^\/$/',
-    '/^\/(?<action>(add|preview))$/',
-    '/^\/(?<action>(edit|remove|view))\/(?<id>[0-9]+)$/',
-    '/^\/(?<controller>task)\/(?<action>add)$/',
-    '/^\/(?<controller>auth)\/(?<action>(login|logout))$/'
-];
-
-/**
- * Existing controllers
- */
-$controllerClasses = [
-    '' => MainController::class,
-    'auth' => AuthController::class
-];
-
-/**
- * Connect to a database
- */
-$database = new Database();
-$database->addConnection([
-    'driver' => 'mysql',
-    'host' => 'localhost',
-    'database' => 'local_beegee',
-    'username' => 'root',
-    'password' => '7777777',
-    'charset' => 'utf8',
-    'collation' => 'utf8_unicode_ci',
-    'prefix' => '',
-]);
-$database->setAsGlobal();
-$database->bootEloquent();
-
-// create router
-$router = new Router($routes);
-
-// Execute application
-new Application($router, $controllerClasses, $database);
+        echo $container->call($controller, $parameters);
+        break;
+}

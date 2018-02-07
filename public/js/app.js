@@ -1,6 +1,8 @@
 ;
-(function () {
-
+(function ($) {
+    /**
+     * Attach events
+     */
     function attachEvents() {
         $('#button-task-form').on('click', function () {
             $containerPreviewAdd.addClass('hidden');
@@ -8,15 +10,21 @@
         });
     }
 
+    /**
+     * Find main containers and button to preview
+     */
     var $containerFormAdd = $('#container-form-add'),
             $containerPreviewAdd = $('#container-preview-add'),
             $buttonTaskPreview = $('#button-task-preview');
 
+    /**
+     * For handling the event of the click of a preview button
+     */
     $buttonTaskPreview.on('click', function () {
         $buttonTaskPreview.addClass('disabled');
 
-        var form = $containerFormAdd.find('form')[0]
-        data = new FormData(form);
+        var form = $containerFormAdd.find('form')[0],
+                data = new FormData(form);
 
         $.ajax({
             url: '/preview',
@@ -45,4 +53,4 @@
             }
         });
     });
-}());
+}(jQuery));

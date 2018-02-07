@@ -3,11 +3,11 @@
 namespace app;
 
 /**
- * Result class
+ * Response class
  *
  * @author Andriy Ivanchenko
  */
-class Result {
+class Response {
 
     /**
      * Constants
@@ -18,18 +18,21 @@ class Result {
 
     /**
      * Status
+     *
      * @var string
      */
     private $status = 'unknown';
 
     /**
      * Message
+     *
      * @var string
      */
     private $message = '';
 
     /**
      * Data
+     *
      * @var array
      */
     private $data = '';
@@ -52,10 +55,10 @@ class Result {
      *
      * @param string $message Message text
      * @param array $data Advanced data
-     * @return \app\Result Result
+     * @return \app\Response
      */
-    public static function createSuccess(string $message, array $data = []): Result {
-        return new Result(Result::STATUS_SUCCESS, $message, $data);
+    public static function createSuccess(string $message, array $data = []): Response {
+        return new Response(Response::STATUS_SUCCESS, $message, $data);
     }
 
     /**
@@ -63,10 +66,10 @@ class Result {
      *
      * @param string $message Message text
      * @param array $data Advanced data
-     * @return \app\Result Result
+     * @return \app\Response
      */
-    public static function createFail(string $message, array $data = []): Result {
-        return new Result(Result::STATUS_FAIL, $message, $data);
+    public static function createFail(string $message, array $data = []): Response {
+        return new Response(Response::STATUS_FAIL, $message, $data);
     }
 
     /**
@@ -106,7 +109,7 @@ class Result {
      * @return bool
      */
     public function isSuccess(): bool {
-        return Result::STATUS_SUCCESS === $this->status;
+        return Response::STATUS_SUCCESS === $this->status;
     }
 
 }

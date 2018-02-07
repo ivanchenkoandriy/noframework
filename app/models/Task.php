@@ -2,17 +2,14 @@
 
 namespace app\models;
 
-use app\Auth;
-use app\Result;
+use app\helpers\sorting\Sorting;
+use app\Response;
 use Exception;
-use FileUpload\FileSystem\Simple as FileSystemSimple;
-use FileUpload\FileUpload;
-use FileUpload\PathResolver\Simple as PathResolverSimple;
-use FileUpload\Validator\Simple as ValidatorSimple;
-use Illuminate\Database\Capsule\Manager as Database;
+use Illuminate\Database\Capsule\Manager;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 /**
- * Model for Task
+ * Task class
  *
  * @author Andriy Ivanchenko
  */
@@ -23,127 +20,176 @@ class Task {
      *
      * @var int
      */
-    public $id;
+    private $id = null;
 
     /**
-     * User name
+     * Email
      *
      * @var string
      */
-    public $name = '';
-
-    /**
-     * E-mail
-     *
-     * @var string
-     */
-    public $email = '';
+    private $email = null;
 
     /**
      * Text
      *
      * @var string
      */
-    public $text = '';
+    private $text = null;
 
     /**
-     * Image path
+     * Image
      *
-     * @var string
+     * @var Image
      */
-    public $image = '';
+    private $image = null;
 
     /**
-     * Is the task completed? (0,1)
+     * Is completed (0, 1)
      *
      * @var int
      */
-    public $isCompleted = 0;
+    private $isCompleted = null;
 
     /**
-     * Database manager
-     * @var Database
+     * Database
+     *
+     * @var Manager
      */
-    private $db;
+    private $database = null;
 
     /**
      * Constructor
      *
-     * @param Database $db
+     * @param Manager $database
      */
-    public function __construct(Database $db) {
-        $this->db = $db;
+    public function __construct(Manager $database) {
+        $this->database = $database;
+    }
+
+    /**
+     * Make table
+     *
+     * @return LengthAwarePaginator
+     */
+    public function makeTable(Sorting $sorting, int $currPage = 1): LengthAwarePaginator {
+        $query = $this->database->table('tasks');
+        $hasSorting = $sorting->hasSorting();
+        $currOrder = $sorting->getCurrentOrder();
+        $currDirection = $sorting->getCurrentDirection();
+
+        if ($hasSorting) {
+            $query->orderBy($currOrder, $currDirection);
+        }
+
+        $tasks = $query->paginate(getenv('PAGINATOR_PER_PAGE'), ['*'], 'page', $currPage);
+        if ($hasSorting) {
+            $tasks->appends('order', $currOrder);
+            $tasks->appends('direction', $currDirection);
+        }
+
+        return $tasks;
     }
 
     /**
      * Validate the properties of the task
      *
-     * @return Result
+     * @return Response
      */
-    public function validate(): Result {
-        $this->name = trim($this->name);
-        if ('' === $this->name) {
-            return Result::createFail('Name required!');
+    private function validate(array $attributes): Response {
+        foreach ($attributes as $name => $value) {
+            /* @var $result Response */
+            $result = call_user_func([$this, 'validate' . mb_strtoupper($name, APP_CHARSET)], $value);
+            if (!$result->isSuccess()) {
+                return $result;
+            }
         }
 
-        if (60 < mb_strlen($this->name, APP_CHARSET)) {
-            return Result::createFail('The maximum length of a name should not exceed 60 characters!');
-        }
-
-        if ('' === $this->email) {
-            return Result::createFail('Email required!');
-        }
-
-        if (255 < mb_strlen($this->email, APP_CHARSET)) {
-            return Result::createFail('The maximum length of email should not exceed 255 characters!');
-        }
-
-        if (!filter_var($this->email, FILTER_VALIDATE_EMAIL)) {
-            return Result::createFail('Not a valid a email!');
-        }
-
-        if ('' === $this->text) {
-            return Result::createFail('Text required!');
-        }
-
-        if (pow(2, 16) < mb_strlen($this->text, APP_CHARSET)) {
-            return Result::createFail('The maximum length of email should not exceed 2^16 characters!');
-        }
-
-        if (512 < mb_strlen($this->image, APP_CHARSET)) {
-            return Result::createFail('The maximum length of a image should not exceed 512 characters!');
-        }
-
-        if ($this->imageExists()) {
-
-        }
-
-        return Result::createSuccess('Success!');
+        return Response::createSuccess('Success!');
     }
 
     /**
      * Add task
      *
-     * @return Result
+     * @return Response
      */
-    public function add(): Result {
-        try {
-            $isAdded = $this->db->table('tasks')->insert([
-                'name' => $this->name,
-                'email' => $this->email,
-                'text' => $this->text,
-                'image' => $this->image,
-            ]);
-        } catch (Exception $ex) {
+    public function add(string $name, string $email, string $text, Image $image): Response {
+        // To prepare values
+        $name = trim($name);
+        $email = trim($email);
+        $text = trim($text);
 
-            return Result::createFail('DB error: ' . $ex->getMessage());
+        // To validate values
+        $result = $this->validate([
+            'name' => $name,
+            'email' => $email,
+            'text' => $text,
+            'image' => $image
+        ]);
+
+        // Try to save
+        $id = null;
+        if ($result->isSuccess()) {
+            try {
+                $id = $this->database->table('tasks')->insertGetId([
+                    'name' => $name,
+                    'email' => $email,
+                    'text' => $text,
+                    'image' => $image->getRelativePath(),
+                ]);
+            } catch (Exception $ex) {
+                $result = Response::createFail('DB error: ' . $ex->getMessage());
+            }
         }
 
-        if ($isAdded) {
-            $result = Result::createSuccess('Success!');
+        // To set attributes
+        if ($id) {
+            $this->id = $id;
+        }
+
+        $this->id = 0;
+        $this->name = $name;
+        $this->email = $email;
+        $this->text = $text;
+        $this->image = $image;
+        $this->isCompleted = 0;
+
+        // To remove the image for fail
+        if (!$result->isSuccess()) {
+            if ($this->image->exists()) {
+                $this->image->remove();
+            }
         } else {
-            $result = Result::createFail('Fail!');
+            $result = Response::createSuccess('Success!');
         }
+
+        return $result;
+    }
+
+    /**
+     * Preview task
+     *
+     * @return Response
+     */
+    public function preview(string $name, string $email, string $text, Image $image): Response {
+        // To prepare values
+        $name = trim($name);
+        $email = trim($email);
+        $text = trim($text);
+
+        // To validate values
+        $result = $this->validate([
+            'name' => $name,
+            'email' => $email,
+            'text' => $text,
+            'image' => $image
+        ]);
+
+        $this->id = 0;
+        $this->name = $name;
+        $this->email = $email;
+        $this->text = $text;
+        $this->image = $image;
+        $this->isCompleted = 0;
 
         return $result;
     }
@@ -151,176 +197,104 @@ class Task {
     /**
      * Edit task
      *
-     * @param array $attributes
-     * @return Result
+     * @return Response
      */
-    public function edit(array $attributes = []): Result {
-        try {
-            $this->db->table('tasks')->where('id', '=', $this->id)->update([
-                'name' => $this->name,
-                'email' => $this->email,
-                'text' => $this->text,
-                'image' => $this->image,
-                'is_completed' => $this->isCompleted
-            ]);
-        } catch (Exception $ex) {
-            return Result::createFail('DB error: ' . $ex->getMessage());
+    public function edit(int $id, string $name, string $email, string $text, Image $image, int $isCompleted, int $removeImage = 0): Response {
+        // To prepare values
+        $name = trim($name);
+        $email = trim($email);
+        $text = trim($text);
+
+        $attributes = [];
+        $this->loadFromDb($id);
+
+        // to save only changes
+        if ($this->name !== $name) {
+            $attributes['name'] = $name;
+            $this->name = $name;
         }
 
-        return Result::createSuccess('Success!');
+        if ($this->email !== $email) {
+            $attributes['email'] = $email;
+            $this->email = $email;
+        }
+
+        if ($this->text !== $text) {
+            $attributes['text'] = $text;
+            $this->text = $text;
+        }
+
+        // The command to remove a new image
+        $oldImage = '';
+        if (1 === $removeImage && '' !== $this->image->getRelativePath()) {
+            $attributes['image'] = new Image();
+            $oldImage = $this->image;
+        }
+
+        if (1 !== $removeImage && $this->image->getRelativePath() !== $image->getRelativePath()) {
+            $attributes['image'] = $image;
+            if ('' !== $this->image->getRelativePath()) {
+                $oldImage = $this->image;
+            }
+
+            $this->image = $image;
+        }
+
+        if ($this->isCompleted !== $isCompleted) {
+            $attributes['is_completed'] = $isCompleted;
+            $this->isCompleted = (int) $isCompleted;
+        }
+
+        if (empty($attributes)) {
+            return Response::createSuccess('There is nothing to edit.');
+        }
+
+        // to validate new values
+        $result = $this->validate($attributes);
+        if (!$result->isSuccess()) {
+            if ($image->exists()) {
+                $image->remove();
+            }
+            return $result;
+        }
+
+        if (array_key_exists('image', $attributes)) {
+            $attributes['image'] = $attributes['image']->getRelativePath();
+        }
+
+        try {
+            // try to update
+            $this->database->table('tasks')->where('id', '=', $this->id)->update($attributes);
+        } catch (Exception $ex) {
+            return Response::createFail('DB error: ' . $ex->getMessage());
+        }
+
+        // to remove old image
+        if ($oldImage instanceof Image) {
+            $oldImage->remove();
+        }
+
+        return Response::createSuccess('Success!');
     }
 
     /**
      * Remove task
      *
-     * @return Result
+     * @param int $id
+     * @return Response
      */
-    public function remove(): Result {
-        if ($this->id) {
-            if ($this->image) {
-                $fs = new FileSystemSimple();
-                $fs->unlink(ROOT_PATH . 'public' . DIRECTORY_SEPARATOR . $this->image);
+    public function remove(int $id): Response {
+        if ($id) {
+            $this->loadFromDb($id);
+            if ($this->image->exists()) {
+                $this->image->remove();
             }
 
-            $this->db->table('tasks')->delete($this->id);
-            return Result::createSuccess('Success!');
+            $this->database->table('tasks')->delete($id);
+            return Response::createSuccess('Success!');
         }
 
-        return Result::createFail('Fail!');
-    }
-
-    /**
-     * Upload an image
-     *
-     * @return Result
-     */
-    private function uploadImage(): Result {
-        // Simple validation (max file size 2MB and only two allowed mime types)
-        $validator = new ValidatorSimple('2M', ['image/png', 'image/jpg', 'image/jpeg',
-            'image/gif']);
-
-        // Simple path resolver, where uploads will be put
-        $pathresolver = new PathResolverSimple(ROOT_PATH . 'public/uploads');
-
-        // The machine's filesystem
-        $filesystem = new FileSystemSimple();
-
-        // FileUploader itself
-        $fileupload = new FileUpload($_FILES['image'], $_SERVER);
-
-        // Adding it all together. Note that you can use multiple validators or none at all
-        $fileupload->setPathResolver($pathresolver);
-        $fileupload->setFileSystem($filesystem);
-        $fileupload->addValidator($validator);
-
-        $fileupload->processAll();
-        $files = $fileupload->getFiles();
-
-        $file = null;
-        if (count($files) > 0) {
-            $file = reset($files);
-        }
-
-        if (NO_FILE_WAS_UPLOADED === $file->errorCode) {
-            return Result::createSuccess('');
-        }
-
-
-        /* @var $file \FileUpload\File */
-        if (empty($file->error)) {
-            $imagePathname = $file->getPathname();
-            (new \claviska\SimpleImage($imagePathname))
-                    ->bestFit(PICTURE_WIDTH, PICTURE_HEIGHT)
-                    ->toFile($imagePathname);
-
-            $this->image = 'uploads/' . $file->getFilename();
-
-            $result = Result::createSuccess('Success.');
-        } else {
-            $result = Result::createFail('Could not load file: ' . $file->error . '.');
-        }
-
-        return $result;
-    }
-
-    /**
-     * Remove image
-     *
-     * @return Result
-     */
-    public function removeImage(): Result {
-        $image = $this->db->table('tasks')->select(['image'])->where('id', $this->id)->get()->first()->image;
-        $fs = new FileSystemSimple();
-        try {
-            $fs->unlink(ROOT_PATH . 'public' . DIRECTORY_SEPARATOR . $image);
-            $this->db->table('tasks')->where('id', $this->id)->update(['image' => '']);
-            $this->image = '';
-        } catch (Exception $ex) {
-            return Result::createFail('Error: ' . $ex->getMessage() . '!');
-        }
-        return Result::createSuccess('Success!');
-    }
-
-    /**
-     * Is there an image
-     *
-     * @return bool
-     */
-    public function imageExists(): bool {
-        return '' !== $this->image && file_exists(ROOT_PATH . 'public' . DIRECTORY_SEPARATOR . $this->image);
-    }
-
-    /**
-     * Load the properties of this task from the form data
-     *
-     * @return Result
-     */
-    public function loadFromForm(): Result {
-        $this->name = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_STRING, [
-            'options' => [
-                'default' => ''
-            ]
-        ]);
-
-        $this->email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL, [
-            'options' => [
-                'default' => ''
-            ]
-        ]);
-
-        $this->text = filter_input(INPUT_POST, 'text', FILTER_SANITIZE_STRING, [
-            'options' => [
-                'default' => ''
-            ]
-        ]);
-
-        $this->image = filter_input(INPUT_POST, 'image', FILTER_SANITIZE_STRING, [
-            'options' => [
-                'default' => ''
-            ]
-        ]);
-
-        $removeImage = (int) filter_input(INPUT_POST, 'remove_image', FILTER_SANITIZE_NUMBER_INT, [
-                    'options' => [
-                        'default' => 0
-                    ]
-        ]);
-
-        if (1 === $removeImage) {
-            $result = $this->removeImage();
-        } else {
-            $result = $this->uploadImage();
-        }
-
-        if (Auth::autorized()) {
-            $this->isCompleted = (int) filter_input(INPUT_POST, 'is_completed', FILTER_SANITIZE_NUMBER_INT, [
-                        'options' => [
-                            'default' => 0
-                        ]
-            ]);
-        }
-
-        return $result;
+        return Response::createFail('Fail!');
     }
 
     /**
@@ -330,18 +304,175 @@ class Task {
      * @return bool
      */
     public function loadFromDb(int $id): bool {
-        $taskArray = $this->db->table('tasks')->where('id', $id)->get()->first();
+        $taskArray = $this->database->table('tasks')->where('id', $id)->get()->first();
+
+        $image = new Image();
+        if ($taskArray->image) {
+            $image->setRelativePath($taskArray->image);
+        }
+
         if ($taskArray) {
-            $this->id = $taskArray->id;
+            $this->id = (int) $taskArray->id;
             $this->name = $taskArray->name;
             $this->email = $taskArray->email;
-            $this->image = $taskArray->image;
+            $this->image = $image;
             $this->text = $taskArray->text;
-            $this->isCompleted = $taskArray->is_completed;
+            $this->isCompleted = (int) $taskArray->is_completed;
             return true;
         }
 
+        $this->image = $image;
+
         return false;
+    }
+
+    /**
+     * Get id
+     *
+     * @return int
+     */
+    public function getId(): int {
+        return $this->id;
+    }
+
+    /**
+     * Get name
+     *
+     * @return string
+     */
+    public function getName(): string {
+        return $this->name;
+    }
+
+    /**
+     * Get email
+     *
+     * @return string
+     */
+    public function getEmail(): string {
+        return $this->email;
+    }
+
+    /**
+     * Get text
+     *
+     * @return string
+     */
+    public function getText(): string {
+        return $this->text;
+    }
+
+    /**
+     * Get image
+     *
+     * @return Image
+     */
+    public function getImage(): Image {
+        return $this->image;
+    }
+
+    /**
+     * Get the state of completing
+     *
+     * @return int
+     */
+    public function getIsCompleted(): int {
+        return $this->isCompleted;
+    }
+
+    /**
+     * Validate name
+     *
+     * @param string $name
+     * @return Response
+     */
+    private function validateName(string $name): Response {
+        if ('' === $name) {
+            return Response::createFail('Name required!');
+        }
+
+        if (60 < mb_strlen($name, APP_CHARSET)) {
+            return Response::createFail('The maximum length of a name should not exceed 60 characters!');
+        }
+
+        return Response::createSuccess('Success!');
+    }
+
+    /**
+     * Validate email
+     *
+     * @param string $email
+     * @return Response
+     */
+    private function validateEmail(string $email): Response {
+        if ('' === $email) {
+            return Response::createFail('Email required!');
+        }
+
+        if (255 < mb_strlen($email, APP_CHARSET)) {
+            return Response::createFail('The maximum length of email should not exceed 255 characters!');
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return Response::createFail('Not a valid a email!');
+        }
+
+        if ($this->database->table('tasks')->select(['id'])->where('email', '=', $email)->exists()) {
+            return Response::createFail('The email must be unque!');
+        }
+
+        return Response::createSuccess('Success!');
+    }
+
+    /**
+     * Validate text
+     *
+     * @param string $text
+     * @return Response
+     */
+    private function validateText(string $text): Response {
+        if ('' === $text) {
+            return Response::createFail('The text required!!');
+        }
+
+        $length = mb_strlen($text, APP_CHARSET);
+        if (pow(2, 16) < $length) {
+            return Response::createFail('The maximum length of text should not exceed 2^16 characters!');
+        }
+
+        if (16 > $length) {
+            return Response::createFail('The minumum length of text must be at least 16 characters!');
+        }
+
+        return Response::createSuccess('Success!');
+    }
+
+    /**
+     * Validate image
+     *
+     * @param \app\models\Image $image
+     * @return Response
+     */
+    private function validateImage(Image $image): Response {
+        if (512 < mb_strlen($image->getRelativePath(), APP_CHARSET)) {
+            return Response::createFail('The maximum length of an image should not exceed 512 characters!');
+        }
+
+        return Response::createSuccess('Success!');
+    }
+
+    /**
+     * Validate isCompleted
+     *
+     * @param int $isCompleted
+     * @return Response
+     */
+    private function validateIs_completed(int $isCompleted): Response {
+        if (1 !== $isCompleted && 0 !== $isCompleted) {
+            return Response::createFail('Value is wrong!');
+        }
+
+        return Response::createSuccess('Success!');
     }
 
 }

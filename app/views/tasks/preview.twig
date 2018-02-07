@@ -1,11 +1,3 @@
-<?php
-/**
- * Task preview template
- *
- * @var $task \app\models\Task Task
- */
-?>
-
 <div class="row">
     <div class="col-md-12">
         <div class="table-responsive">
@@ -13,29 +5,29 @@
                 <tbody>
                     <tr>
                         <th>User name:</th>
-                        <td><?= '' === $task->name ? 'empty' : $task->name; ?></td>
+                        <td>{{ task.getName()|default('empty') }}</td>
                     </tr>
 
                     <tr>
                         <th>Email:</th>
-                        <td><?= '' === $task->email ? 'empty' : $task->email; ?></td>
+                        <td>{{ task.getEmail()|default('empty') }}</td>
                     </tr>
 
                     <tr>
                         <th>Text:</th>
-                        <td><?= '' === $task->text ? 'empty' : $task->text; ?></td>
+                        <td>{{ task.getText()|default('empty') }}</td>
                     </tr>
 
-                    <?php if ($task->image) { ?>
+                    {% if task.getImage().exists() %}
                         <tr>
                             <th>Image:</th>
-                            <td><img src="/<?= $task->image; ?>" class="img-responsive" alt="Image"></td>
+                            <td><img src="{{ task.getImage().getUrl() }}" class="img-responsive" alt="Image"></td>
                         </tr>
-                    <?php } ?>
+                    {% endif %}
 
                     <tr>
                         <th>Completed:</th>
-                        <td><?= $task->isCompleted ? 'yes' : 'no'; ?></td>
+                        <td>{% if task.isCompleted %}yes{% else %}no{% endif %}</td>
                     </tr>
                 </tbody>
             </table>

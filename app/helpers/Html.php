@@ -2,18 +2,18 @@
 
 namespace app\helpers\Html {
 
+    use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
     /**
      * Create pagination markup
      *
-     * @param string $baseUrl
-     * @param int $totalResults
-     * @param int $resultsPerPage
-     * @param int $currentPage
-     * @param array $queryStringArray
-     *
-     * @see https://github.com/perials/pagination-function
+     * @param LengthAwarePaginator $paginator
      */
-    function pagination($baseUrl, $totalResults, $resultsPerPage, $currentPage, $queryStringArray = []) {
+    function pagination(LengthAwarePaginator $paginator) {
+        $totalResults = $paginator->total();
+        $resultsPerPage = $paginator->perPage();
+        $currentPage = $paginator->currentPage();
+
         //total pages to show
         $totalPages = ceil($totalResults / $resultsPerPage);
 
@@ -22,139 +22,51 @@ namespace app\helpers\Html {
             return '';
         }
 
-        //build the query string if provided
-        $queryString = '';
-        if ($queryStringArray) {
-            $queryString = '&' . http_build_query($queryStringArray);
-        }
-
         //show not more than 3 paginated links on right and left side
         $rightLinks = $currentPage + 3;
         $previousLinks = $currentPage - 3;
-        ob_start();
-        ?>
-        <nav aria-label="Page navigation" class="text-center">
-            <ul class="pagination">
-                <?php
-                //if page number 1 is not shown then show the "First page" link
-                if ($previousLinks > 1) {
-                    ?>
-                    <li>
-                        <a href="<?php echo $baseUrl . '?page=1' . $queryString; ?>" aria-label="First">
-                            <span aria-hidden="true">&laquo;&laquo;</span>
-                        </a>
-                    </li>
-                    <?php
-                }
 
-                //disable previous button when first page
-                if ($currentPage == 1) {
-                    ?>
-                    <li class="disabled">
-                        <a href="#" aria-label="Previous">
-                            <span aria-hidden="true">&laquo;</span>
-                        </a>
-                    </li>
-                    <?php
-                }
+        $html = '<nav aria-label="Page navigation" class="text-center"><ul class="pagination">';
+        //if page number 1 is not shown then show the "First page" link
+        if ($previousLinks > 1) {
+            $html .= '<li><a href="' . $paginator->previousPageUrl() . '" aria-label="First"><span aria-hidden="true">&laquo;&laquo;</span></a></li>';
+        }
 
-                //if current page > 1 only then show previous page
-                if ($currentPage > 1) {
-                    ?>
-                    <li>
-                        <a href="<?php echo $baseUrl . '?page=' . ($currentPage - 1) . $queryString; ?>" aria-label="Previous">
-                            <span aria-hidden="true">&laquo;</span>
-                        </a>
-                    </li>
-                    <?php
-                }
+        //disable previous button when first page
+        if ($currentPage == 1) {
+            $html .= '<li class="disabled"><a aria-label="Previous"><span aria-hidden="true">&laquo;</span></a></li>';
+        }
 
-                //Create left-hand side links
-                for ($i = $previousLinks; $i <= $currentPage; $i++) {
-                    if ($i > 0) {
-                        if ($i == $currentPage) {
-                            ?>
-                            <li class="active"><a href="#"><?php echo $i; ?></a></li>
-                        <?php } else {
-                            ?>
-                            <li>
-                                <a href="<?php echo $baseUrl . '?page=' . $i . $queryString; ?>"><?php echo $i; ?></a>
-                            </li>
-                            <?php
-                        }
-                    }
-                }
+        //if current page > 1 only then show previous page
+        if ($currentPage > 1) {
+            $html .= '<li><a href="' . $paginator->previousPageUrl() . '" aria-label="Previous"><span aria-hidden="true">&laquo;</span></a></li>';
+        }
 
-                //middle pages
-                if (false) {
-                    for ($i = 1; $i <= $totalPages; $i++) {
-                        if ($i == $currentPage) {
-                            ?>
-                            <li class="active"><a href="#"><?php echo $i; ?></a></li>
-                        <?php } else {
-                            ?>
-                            <li>
-                                <a href="<?php echo $baseUrl . '?page=' . $i . $queryString; ?>"><?php echo $i; ?></a>
-                            </li>
-                            <?php
-                        }
-                    }
-                }
+        //Create left-hand side links
+        for ($i = 1; $i <= $paginator->lastPage(); $i++) {
+            if ($i == $currentPage) {
+                $html .= '<li class="active"><a>' . $i . '</a></li>';
+            } else {
+                $html .= '<li><a href="' . $paginator->url($i) . '">' . $i . '</a></li>';
+            }
+        }
 
-                //right side links
-                for ($i = $currentPage + 1; $i < $rightLinks; $i++) {
-                    if ($i <= $totalPages) {
-                        if ($i == $currentPage) {
-                            ?>
-                            <li class="active"><a href="#"><?php echo $i; ?></a></li>
-                        <?php } else {
-                            ?>
-                            <li>
-                                <a href="<?php echo $baseUrl . '?page=' . $i . $queryString; ?>"><?php echo $i; ?></a>
-                            </li>
-                            <?php
-                        }
-                    }
-                }
+        //if current page is not last page then only show next page link
+        if ($currentPage != $totalPages) {
+            $html .= '<li><a href="' . $paginator->nextPageUrl() . '" aria-label="Next"><span aria-hidden="true">&raquo;</span></a></li>';
+        }
 
-                //if current page is not last page then only show next page link
-                if ($currentPage != $totalPages) {
-                    ?>
-                    <li>
-                        <a href="<?php echo $baseUrl . '?page=' . ($currentPage + 1) . $queryString; ?>" aria-label="Next">
-                            <span aria-hidden="true">&raquo;</span>
-                        </a>
-                    </li>
-                    <?php
-                }
+        //if current page is last page then show next page link disabled
+        if ($currentPage == $totalPages) {
+            $html .= '<li class="disabled"><a href="#" aria-label="Next"><span aria-hidden="true">&raquo;</span></a></li>';
+        }
 
-                //if current page is last page then show next page link disabled
-                if ($currentPage == $totalPages) {
-                    ?>
-                    <li class="disabled">
-                        <a href="#" aria-label="Next">
-                            <span aria-hidden="true">&raquo;</span>
-                        </a>
-                    </li>
-                    <?php
-                }
+        if ($rightLinks < $totalPages) {
+            $html .= '<li><a href="' . $paginator->url(1) . '" aria-label="First"><span aria-hidden="true">&raquo;&raquo;</span></a></li>';
+        }
 
-                if ($rightLinks < $totalPages) {
-                    ?>
-                    <li>
-                        <a href="<?php echo $baseUrl . '?page=' . $totalPages . $queryString; ?>" aria-label="First">
-                            <span aria-hidden="true">&raquo;&raquo;</span>
-                        </a>
-                    </li>
-                    <?php
-                }
-                ?>
-            </ul>
-        </nav>
-        <?php
-        $output = ob_get_contents();
-        ob_end_clean();
-        return $output;
+        $html .= '</ul></nav>';
+        return $html;
     }
 
 }

@@ -1,0 +1,42 @@
+{% extends 'layout.twig' %}
+
+{% block content %}
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="table-responsive">
+                    <table class="table">
+                        <tbody>
+                            <tr>
+                                <th>User name:</th>
+                                <td>{{ task.getName() }}</td>
+                            </tr>
+
+                            <tr>
+                                <th>Email:</th>
+                                <td>{{ task.getEmail() }}</td>
+                            </tr>
+
+                            <tr>
+                                <th>Text:</th>
+                                <td>{{ task.getText() }}</td>
+                            </tr>
+
+                            {% if task.getImage().exists() %}
+                                <tr>
+                                    <th>Image:</th>
+                                    <td><img src="{{ task.getImage().getUrl() }}" class="img-responsive" alt="Image"></td>
+                                </tr>
+                            {% endif %}
+
+                            <tr>
+                                <th>Completed:</th>
+                                <td>{% if task.isCompleted %}yes{% else %}no{% endif %}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

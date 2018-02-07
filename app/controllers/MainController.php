@@ -2,12 +2,13 @@
 
 namespace app\controllers;
 
-use app\Auth;
+use app\helpers\sorting\Sorting;
+use app\models\Image;
+use app\models\SitePage;
 use app\models\Task;
-use app\Result;
+use app\Response;
 use Illuminate\Database\Capsule\Manager;
-use League\Url\Url;
-use function app\helpers\Html\pagination;
+use Symfony\Component\HttpFoundation\Request;
 use function app\helpers\Http\redirect;
 
 /**
@@ -15,35 +16,54 @@ use function app\helpers\Http\redirect;
  *
  * @author Andriy Ivanchenko
  */
-class MainController extends BaseController {
+class MainController {
+
+    /**
+     * Database
+     *
+     * @var Manager
+     */
+    private $database;
+
+    /**
+     * View
+     *
+     * @var type
+     */
+    private $view;
+
+    /**
+     * Request
+     *
+     * @var Request
+     */
+    private $request;
+
+    /**
+     * Constructor
+     *
+     * @param Manager $database
+     * @param \Twig_Environment $view
+     */
+    public function __construct(Manager $database, \Twig_Environment $view, Request $request) {
+        $this->database = $database;
+        $this->view = $view;
+        $this->request = $request;
+    }
 
     /**
      * Main page, Task table
      *
      * @return string Returns the HTML
      */
-    public function index() {
-        $this->addLayoutParam('title', 'BeeGee | Main page');
-        $this->addLayoutParam('description', 'Main page and Task table');
-        $this->addLayoutParam('breadcrumbs', [
-            [
-                'title' => 'Main',
-            ]
-        ]);
+    public function index(): string {
+        $page = $this->request->get('page', 1);
+        $order = $this->request->get('order', '');
+        $direction = $this->request->get('direction', '');
+        $uri = $this->request->getUri();
+        $url = \League\Url\Url::createFromUrl($uri);
 
-        $order = filter_input(INPUT_GET, 'order', FILTER_SANITIZE_STRING, [
-            'options' => [
-                'default' => ''
-            ]
-        ]);
-
-        $direction = filter_input(INPUT_GET, 'direction', FILTER_SANITIZE_STRING, [
-            'options' => [
-                'default' => ''
-            ]
-        ]);
-
-        $sortData = [
+        $sorting = new Sorting($url, $order, $direction, [
             'name' => [
                 'direction' => 'asc',
                 'class' => 'sorting'
@@ -56,68 +76,20 @@ class MainController extends BaseController {
                 'direction' => 'asc',
                 'class' => 'sorting'
             ],
-        ];
-
-        $currDirection = '';
-        $currOrder = '';
-        if (array_key_exists($order, $sortData)) {
-            $currOrder = $order;
-            if ('asc' === $direction) {
-                $currDirection = 'asc';
-                $nextDirection = 'desc';
-            } else {
-                $currDirection = 'desc';
-                $nextDirection = 'asc';
-            }
-
-            $sortData[$order]['direction'] = $nextDirection;
-            $sortData[$order]['class'] = 'sorting_' . $currDirection;
-        }
-
-        $url = Url::createFromServer($_SERVER);
-        $baseUrl = $url->getBaseUrl();
-        $query = $url->getQuery();
-        $sortingUrl = [];
-        foreach ($sortData as $order => &$data) {
-            $query->modify([
-                'order' => $order,
-                'direction' => $data['direction']
-            ]);
-
-            $sortData[$order]['url'] = (string) $url;
-        }
-
-        $totalResults = $this->databaseManager->table('tasks')->count();
-        $resultsPerPage = 3;
-        $maxRange = ceil($totalResults / $resultsPerPage);
-        $currentPage = filter_input(INPUT_GET, 'page', FILTER_SANITIZE_NUMBER_INT, [
-            'options' => [
-                'default' => 1,
-                'max_range' => $maxRange
-            ]
         ]);
 
-        /* @var $db Manager */
-        $db = $this->databaseManager;
-        $offset = ($currentPage - 1) * $resultsPerPage;
-        $query = $db
-                ->table('tasks')
-                ->offset($offset)
-                ->limit($resultsPerPage);
+        $task = new Task($this->database);
+        $tasks = $task->makeTable($sorting, $page);
 
-        if ('' !== $currDirection && '' !== $currOrder) {
-            $query->orderBy($currOrder, $currDirection);
-            $paginationParams = ['order' => $currOrder, 'direction' => $currDirection];
-        }
+        $sitePage = new SitePage('BeeGee | Main page', 'Main page and Task table.', [
+            ['title' => 'Main']
+        ]);
 
-        $tasks = $query->get()->toArray();
-
-        $pagination = pagination($baseUrl, $totalResults, $resultsPerPage, $currentPage, $paginationParams);
-
-        return $this->view->render('tasks/index.php', [
+        return $this->view->render('tasks/index.twig', [
                     'tasks' => $tasks,
-                    'sortData' => $sortData,
-                    'pagination' => $pagination
+                    'sortData' => $sorting->getData(),
+                    'sitePage' => $sitePage,
+                    'emptyTasks' => Response::createFail('Data not found!')
         ]);
     }
 
@@ -126,39 +98,83 @@ class MainController extends BaseController {
      *
      * @return string Returns the HTML
      */
-    public function add() {
-        $this->addLayoutParam('title', 'BeeGee | Add a task');
-        $this->addLayoutParam('description', 'The page to add a task.');
-        $this->addLayoutParam('breadcrumbs', [
-            [
-                'title' => 'Main',
-                'url' => '/'
-            ],
-            [
-                'title' => 'Add task'
-            ],
+    public function add(): string {
+        $sitePage = new SitePage('BeeGee | Add task', 'The page for adding task.', [
+            ['title' => 'Main', 'url' => '/'],
+            ['title' => 'Add task'],
         ]);
 
-        $isSubmitted = 'send' === filter_input(INPUT_POST, 'submit');
+        return $this->view->render('tasks/add.twig', ['sitePage' => $sitePage]);
+    }
 
-        $task = new Task($this->databaseManager);
+    /**
+     * The handler of the adding
+     *
+     * @return string
+     */
+    public function addHandler(): string {
+        $request = $this->request;
 
-        $result = false;
-        if ($isSubmitted) {
-            $task->loadFromForm();
-            $result = $task->validate();
-            if ($result->isSuccess()) {
-                $result = $task->add();
-            }
+        $image = new Image();
+        $image->upload();
+        if (!$image) {
+            $image = Image::createFromString($request->get('image'));
         }
 
-        if ($result && $result->isSuccess()) {
-            redirect('/', true);
-            return;
+        $task = new Task($this->database);
+        $result = $task->add($request->get('name', ''), $request->get('email', ''), $request->get('text', ''), $image);
+        if ($result->isSuccess()) {
+            redirect('/');
         } else {
-            return $this->view->render('tasks/add.php', [
+            $sitePage = new SitePage('BeeGee | Add task', 'The page for adding task.', [
+                ['title' => 'Main', 'url' => '/'],
+                ['title' => 'Add task'],
+            ]);
+
+            return $this->view->render('tasks/add.twig', [
                         'result' => $result,
                         'task' => $task,
+                        'sitePage' => $sitePage
+            ]);
+        }
+    }
+
+    /**
+     * The handler of the editing
+     *
+     * @param int $id
+     * @param \app\models\User $user
+     * @return string
+     */
+    public function editHandler(int $id, \app\models\User $user): string {
+        $authorized = $user->authorized();
+        if (!$authorized) {
+            return $this->view->render('tasks/access-denied.twig', ['result' => Response::createFail('Access denied!')]);
+        }
+
+        $request = $this->request;
+
+        $image = new Image();
+        $image->upload();
+        if ('' === $image->getRelativePath()) {
+            $image->setRelativePath($request->get('image', ''));
+        }
+
+        $task = new Task($this->database);
+        $result = $task->edit($request->get('id', ''), $request->get('name', ''), $request->get('email', ''), $request->get('text', ''), $image, $request->get('is_completed', 0), $request->get('remove_image', 0));
+        if ($result->isSuccess()) {
+            redirect('/');
+        } else {
+            $sitePage = new SitePage('BeeGee | Edit task', 'The page for editing task.', [
+                ['title' => 'Main', 'url' => '/'],
+                ['title' => 'Edit task'],
+            ]);
+
+            return $this->view->render('tasks/edit.twig', [
+                        'task' => $task,
+                        'result' => $result,
+                        'wrongFile' => Response::createFail('File ' . $task->getImage()->getRelativePath() . ' not found.'),
+                        'sitePage' => $sitePage
             ]);
         }
     }
@@ -169,49 +185,23 @@ class MainController extends BaseController {
      * @param int $id Task identifier
      * @return string Returns the HTML
      */
-    public function edit(int $id) {
-        if (!Auth::autorized()) {
-            return $this->view->render('tasks/access-denied.php');
+    public function edit(int $id, \app\models\User $user): string {
+        $authorized = $user->authorized();
+        if (!$authorized) {
+            return $this->view->render('tasks/access-denied.twig', ['result' => Response::createFail('Access denied!')]);
         }
 
-        $this->addLayoutParam('title', 'BeeGee | Edit task');
-        $this->addLayoutParam('description', 'Edit task.');
-        $this->addLayoutParam('breadcrumbs', [
-            [
-                'title' => 'Main',
-                'url' => '/'
-            ],
-            [
-                'title' => 'Edit task'
-            ],
+        $task = new Task($this->database);
+        $task->loadFromDb($id);
+
+        $sitePage = new SitePage('BeeGee | Edit task', 'The page for editing task.', [
+            ['title' => 'Main', 'url' => '/'],
+            ['title' => 'Edit task'],
         ]);
 
-        $isSubmitted = 'send' === filter_input(INPUT_POST, 'submit');
-
-        $task = new Task($this->databaseManager);
-
-        $result = false;
-        if ($isSubmitted) {
-            $task->id = filter_input(INPUT_POST, 'id', FILTER_SANITIZE_NUMBER_INT, [
-                'options' => [
-                    'default' => 0
-                ]
-            ]);
-
-            $result = $task->loadFromForm();
-            if ($result->isSuccess()) {
-                $result = $task->validate();
-            }
-            if ($result->isSuccess()) {
-                $result = $task->edit();
-            }
-        } else {
-            $task->loadFromDb($id);
-        }
-
-        return $this->view->render('tasks/edit.php', [
+        return $this->view->render('tasks/edit.twig', [
                     'task' => $task,
-                    'result' => $result
+                    'sitePage' => $sitePage
         ]);
     }
 
@@ -221,65 +211,83 @@ class MainController extends BaseController {
      * @param int $id Task identifier
      * @return string Returns the HTML
      */
-    public function remove(int $id) {
-        if (!Auth::autorized()) {
-            return $this->view->render('tasks/access-denied.php');
+    public function remove(int $id, \app\models\User $user): string {
+        if (!$user->authorized()) {
+            return $this->view->render('tasks/access-denied.twig', ['result' => Response::createFail('Access denied!')]);
         }
 
-        $this->addLayoutParam('breadcrumbs', [
-            [
-                'title' => 'Main',
-                'url' => '/'
-            ],
-            [
-                'title' => 'Remove task'
-            ],
+        $task = new Task($this->database);
+        $task->loadFromDb($id);
+
+        $sitePage = new SitePage('BeeGee | Remove task', 'The page for removing task.', [
+            ['title' => 'Main', 'url' => '/'],
+            ['title' => 'Remove task'],
         ]);
 
-        $isSubmitted = 'send' === filter_input(INPUT_POST, 'submit');
-
-        $task = new Task($this->databaseManager);
-        $task->loadFromDb($id);
-        $result = false;
-        if ($isSubmitted) {
-            if (!$task->remove()) {
-                $result = Result::createFail('Failed to delete task!');
-            } else {
-                return $this->view->render('tasks/successful-removal.php', [
-                            'task' => $task,
-                            'result' => $result
-                ]);
-            }
-        }
-
-        return $this->view->render('tasks/remove.php', [
+        return $this->view->render('tasks/remove.twig', [
                     'task' => $task,
-                    'result' => $result
+                    'sitePage' => $sitePage
         ]);
     }
 
     /**
+     * The handler of the removing
+     *
+     * @param int $id
+     * @param \app\models\User $user
+     * @return string
+     */
+    public function removeHandler(int $id, \app\models\User $user): string {
+        if (!$user->authorized()) {
+            return $this->view->render('tasks/access-denied.twig', ['result' => Response::createFail('Access denied!')]);
+        }
+
+        $task = new Task($this->database);
+        $result = $task->remove($id);
+        if (!$result->isSuccess()) {
+            $result = Response::createFail('Failed to delete task!');
+            $sitePage = new SitePage('BeeGee | Remove task', 'The page for removing task.', [
+                ['title' => 'Main', 'url' => '/'],
+                ['title' => 'Remove task'],
+            ]);
+
+            return $this->view->render('tasks/remove.twig', [
+                        'task' => $task,
+                        'result' => $result,
+                        'sitePage' => $sitePage
+            ]);
+        } else {
+            $sitePage = new SitePage('BeeGee | Remove task', 'The task was successful removal.', [
+                ['title' => 'Main', 'url' => '/'],
+                ['title' => 'Successful removal'],
+            ]);
+
+            return $this->view->render('tasks/successful-removal.twig', [
+                        'task' => $task,
+                        'result' => $result,
+                        'sitePage' => $sitePage
+            ]);
+        }
+    }
+
+    /**
      * Look at the task
-     * 
+     *
      * @param int $id Task identifier
      * @return string Returns the HTML
      */
-    public function view(int $id) {
-        $this->addLayoutParam('breadcrumbs', [
-            [
-                'title' => 'Main',
-                'url' => '/'
-            ],
-            [
-                'title' => 'Look at the task'
-            ],
-        ]);
-
-        $task = new Task($this->databaseManager);
+    public function view(int $id): string {
+        $task = new Task($this->database);
         $task->loadFromDb($id);
 
-        return $this->view->render('tasks/view.php', [
+        $sitePage = new SitePage('BeeGee | Remove task', 'Look at the task.', [
+            ['title' => 'Main', 'url' => '/'],
+            ['title' => 'View task'],
+        ]);
+
+        return $this->view->render('tasks/view.twig', [
                     'task' => $task,
+                    'sitePage' => $sitePage
         ]);
     }
 
@@ -288,15 +296,28 @@ class MainController extends BaseController {
      *
      * @return string Returns a JSON string
      */
-    public function preview() {
-        $task = new Task($this->databaseManager);
-        $task->loadFromForm();
+    public function preview(): string {
+        $request = $this->request;
 
-        $result = new Result('success', 'Success!', [
-            'html' => $this->view->render('tasks/preview.php', [
-                'task' => $task,
-            ])
-        ]);
+        // TODO To remove pictures that has left
+        $image = new Image();
+        $image->upload();
+        if (!$image) {
+            $image = Image::createFromString($request->get('image'));
+        }
+
+        $task = new Task($this->database);
+        $previewResponse = $task->preview($request->get('name', ''), $request->get('email', ''), $request->get('text', ''), $image);
+
+        $parameters = ['task' => $task];
+
+        if (!$previewResponse->isSuccess()) {
+            $parameters['result'] = $previewResponse;
+        }
+
+        $html = $this->view->render('tasks/preview.twig', $parameters);
+
+        $result = Response::createSuccess('Success!', ['html' => $html]);
 
         return json_encode($result->toArray());
     }

@@ -1,3 +1,6 @@
 /vendor
 /bower
 /*.tar.gz
+/deploy.php
+/.env
+/coverage/

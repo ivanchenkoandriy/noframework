@@ -17,12 +17,10 @@ namespace app\helpers\Http {
     }
 
     /**
-     * Is this AJAX?
-     *
-     * @return bool
+     * Header for "Not allowed"
      */
-    function isAjax() {
-        return isset($_SERVER['HTTP_X_REQUESTED_WITH']) && !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 'xmlhttprequest' === strtolower($_SERVER['HTTP_X_REQUESTED_WITH']);
+    function notAllowed() {
+        header("HTTP/1.0 405 Method Not Allowed");
     }
 
 }

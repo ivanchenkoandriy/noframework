@@ -1,0 +1,11 @@
+{% extends 'layout.twig' %}
+
+{% block content %}
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12">
+                {% include 'blocks/alert.twig' with {'result' : result } %}
+            </div>
+        </div>
+    </div>
+{% endblock %}
